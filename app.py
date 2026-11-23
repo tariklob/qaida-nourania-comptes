@@ -199,12 +199,5 @@ def health(): return {"status":"ok"}
 
 init_db()
 
-with db() as c:
-    c.execute(
-        "UPDATE users SET password_hash=? WHERE username='professeur'",
-        (generate_password_hash("***REMOVED***"),)
-    )
-
-print("Mot de passe professeur réinitialisé")
 if __name__=="__main__":
     app.run(host="127.0.0.1",port=int(os.environ.get("PORT",5000)),debug=False)
