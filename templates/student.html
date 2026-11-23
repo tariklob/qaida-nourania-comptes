@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="top">
+  <div>
+    <h1>Bonjour {{ user.display_name }} !</h1>
+    <p class="muted">Avance à ton rythme dans les leçons de Qaïda Nourania.</p>
+  </div>
+  <span class="pill">Classe unique · Espace élève</span>
+</div>
+
+<section class="card">
+  <h2>Mon parcours</h2>
+  <div class="grid">
+    {% for title,items in lessons %}
+      {% set s=summary.get(loop.index0,{}) %}
+      <div class="metric">
+        <b>{{ loop.index }}. {{ title }}</b>
+        <span>{{ s.get('successes',0) }} réussite(s) · {{ s.get('attempts',0) }} essai(s)</span>
+        <p><a href="#lesson{{ loop.index0 }}">Accéder aux exercices</a></p>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% for title,items in lessons %}
+{% set lesson_i = loop.index0 %}
+<section class="card" id="lesson{{ lesson_i }}">
+  <h2>{{ loop.index }}. {{ title }}</h2>
+  <p class="muted">Écoute le modèle, puis recopie exactement le mot arabe avec ses signes vocaliques.</p>
+  <div class="grid">
+  {% for word in items %}
+    <article class="exercise metric" data-lesson="{{ lesson_i }}" data-exercise="{{ loop.index0 }}" data-word="{{ word }}">
+      <div class="ar target-word">{{ word }}</div>
+      <button class="btn light audio-button" type="button">🔊 Écouter</button>
+      <label>Écris le mot en arabe</label>
+      <input class="answer" type="text" lang="ar" dir="rtl" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Réponse en arabe">
+      <div class="keyboard" aria-label="Clavier arabe">
+        {% for key in ["ا","أ","إ","آ","ب","ت","ث","ج","ح","خ","د","ذ","ر","ز","س","ش","ص","ض","ط","ظ","ع","غ","ف","ق","ك","ل","م","ن","ه","و","ي","ى","ء","َ","ِ","ُ","ً","ٍ","ٌ","ْ","ّ","ٰ"] %}
+          <button type="button" class="key" data-key="{{ key }}">{{ key }}</button>
+        {% endfor %}
+        <button type="button" class="key wide" data-key="backspace">⌫</button>
+        <button type="button" class="key wide" data-key="space">مسافة</button>
+      </div>
+      <button class="btn check-button" type="button">Vérifier</button>
+      <p class="feedback" aria-live="polite"></p>
+      <div class="comparison" hidden></div>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+<style>
+.exercise{min-width:0}
+.exercise .target-word{font-size:38px;margin:4px 0 12px}
+.exercise .answer{font:30px "Noto Naskh Arabic","Amiri",serif;text-align:right;direction:rtl;margin:8px 0;border:2px solid #cfd6df}
+.keyboard{display:flex;flex-wrap:wrap;gap:5px;margin:9px 0 13px}
+.key{min-width:35px;padding:7px 9px;border:1px solid #cfd6df;border-radius:8px;background:#fff;font:22px "Noto Naskh Arabic","Amiri",serif;cursor:pointer}
+.key.wide{font:14px system-ui;min-width:60px}
+.feedback{min-height:24px;font-weight:650}
+.feedback.good{color:#146c43}.feedback.bad{color:#a12b24}
+.comparison{direction:rtl;text-align:right;line-height:2.2;font:26px "Noto Naskh Arabic","Amiri",serif;background:#fff;border-radius:8px;padding:8px;margin-top:8px}
+.comparison .ok{color:#16834a}.comparison .wrong{color:#b42318;background:#fee4e2;border-radius:4px}
+@media(max-width:600px){.key{min-width:32px;padding:6px}.exercise .answer{font-size:26px}}
+</style>
+
+<script>
+const csrfToken = {{ csrf_token|tojson }};
+function speakArabic(text) {
+  if (!("speechSynthesis" in window)) {
+    alert("La lecture audio n'est pas disponible sur ce navigateur.");
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "ar-SA";
+  utterance.rate = 0.68;
+  window.speechSynthesis.speak(utterance);
+}
+function normalizeArabic(value) {
+  return value.normalize("NFC").replace(/\u0640/g, "").trim();
+}
+function insertAtCursor(input, value) {
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  input.value = input.value.slice(0, start) + value + input.value.slice(end);
+  input.focus();
+  const pos = start + value.length;
+  input.setSelectionRange(pos, pos);
+}
+function showComparison(container, expected, actual) {
+  const exp = Array.from(normalizeArabic(expected));
+  const got = Array.from(normalizeArabic(actual));
+  const max = Math.max(exp.length, got.length);
+  let html = "";
+  for (let i = 0; i < max; i++) {
+    const same = exp[i] === got[i];
+    const char = got[i] ?? "◌";
+    html += `<span class="${same ? "ok" : "wrong"}">${escapeHtml(char)}</span>`;
+  }
+  container.innerHTML = html || "—";
+  container.hidden = false;
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+document.querySelectorAll(".exercise").forEach(card => {
+  const input = card.querySelector(".answer");
+  const feedback = card.querySelector(".feedback");
+  const comparison = card.querySelector(".comparison");
+  const expected = card.dataset.word;
+
+  card.querySelector(".audio-button").addEventListener("click", () => speakArabic(expected));
+  card.querySelectorAll(".key").forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.key;
+      if (key === "backspace") {
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        if (start === end && start > 0) input.setRangeText("", start - 1, end, "end");
+        else input.setRangeText("", start, end, "end");
+        input.focus();
+      } else if (key === "space") {
+        insertAtCursor(input, " ");
+      } else {
+        insertAtCursor(input, key);
+      }
+    });
+  });
+
+  card.querySelector(".check-button").addEventListener("click", async () => {
+    const actual = normalizeArabic(input.value);
+    const target = normalizeArabic(expected);
+    const success = actual === target;
+    feedback.textContent = success
+      ? "Bravo ! La réponse est correcte."
+      : "Ce n'est pas encore exact. Vérifie les lettres et les signes vocaliques.";
+    feedback.className = "feedback " + (success ? "good" : "bad");
+    showComparison(comparison, target, actual);
+
+    try {
+      const response = await fetch("{{ url_for('save_progress') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+        body: JSON.stringify({
+          lesson_index: Number(card.dataset.lesson),
+          exercise_index: Number(card.dataset.exercise),
+          success: success
+        })
+      });
+      if (!response.ok) throw new Error("save failed");
+      feedback.textContent += " Progression enregistrée.";
+    } catch (error) {
+      feedback.textContent += " Attention : la sauvegarde a échoué. Réessaie lorsque la connexion fonctionne.";
+    }
+  });
+});
+</script>
+{% endblock %}
